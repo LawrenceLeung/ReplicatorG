@@ -397,104 +397,114 @@ public class RepRap5DDriver extends SerialDriver implements SerialFifoEventListe
 	protected void _sendCommand(String next, boolean synchronous, boolean resending) {
 				
 		// If this line is uncommented, it simply sends the next line instead of doing a retransmit!
-		if (!resending) 
-		{
-			sendCommandLock.lock();
-
-			//assert (isInitialized());
-			// System.out.println("sending: " + next);
-	
-			next = clean(next);
-			next = fix(next); // make it compatible with older versions of the GCode interpeter
-			
-			// skip empty commands.
-			if (next.length() == 0)
+		try {
+			if (!resending) 
 			{
+				sendCommandLock.lock();
+	
+				// assert (isInitialized());
+				// System.out.println("sending: " + next);
+		
+				next = clean(next);
+				next = fix(next); // make it compatible with older versions of the GCode interpeter
+				
+				// skip empty commands.
+				if (next.length() == 0)
+				{
+					return;
+				}
+		
+				//update the current feedrate
+				String feedrate = getRegexMatch("F(-[0-9\\.]+)", next, 1);
+				if (feedrate!=null) this.feedrate.set(Double.parseDouble(feedrate));
+		
+				//update the current extruder position
+				String e = getRegexMatch("E([-0-9\\.]+)", next, 1);
+				if (e!=null) this.ePosition.set(Double.parseDouble(e));
+		
+				// applychecksum replaces the line that was to be retransmitted, into the next line.
+				if (hasChecksums) next = applyChecksum(next);
+				
+				Base.logger.finest("sending: "+next);
+			}
+			else
+			{
+				Base.logger.finest("resending: "+next);
+				// System.out.println("resending: " + next);
+			}
+			// Block until we can fit the command on the Arduino
+	/*		synchronized(bufferLock)
+			{
+				//wait for the number of commands queued in the buffer to shrink before 
+				//adding the next command to it.
+				while(bufferSize + next.length() + 1 > maxBufferSize)
+				{
+					Base.logger.warning("reprap driver buffer full. gcode write slowed.");
+					try {
+						bufferLock.wait();
+					}
+					catch (InterruptedException e1) {
+						//Presumably we're shutting down
+						Thread.currentThread().interrupt();
+						return;
+					}
+				}
+			}*/
+			
+	
+			// debug... let us know whats up!
+			if(debugLevel > 1)
+				Base.logger.info("Sending: " + next);
+	
+	
+			try {
+				synchronized(next)
+				{
+					// do the actual send.
+					try {
+						serialInUse.lock();
+						try {
+							bufferLock.lock();
+							assert (serial != null);
+							
+							if((introduceNoiseEveryN != -1) && (lineIterator++) >= introduceNoiseEveryN) {
+								Base.logger.info("Introducing noise (lineIterator=="
+										+ lineIterator + ",introduceNoiseEveryN=" + introduceNoiseEveryN + ")");
+								
+		lineIterator = 0;
+								String noisyNext = next.replace('6','7').replace('7','1') + "\n";
+								serial.write(noisyNext);
+							} else {
+								serial.write(next + "\n");
+							}
+			
+							// record it in our buffer tracker.
+							int cmdlen = next.length() + 1;
+							commands.add(cmdlen);
+							bufferSize += cmdlen;
+							buffer.addFirst(next);
+						} finally {
+							bufferLock.unlock();
+						}
+					} finally {
+						serialInUse.unlock();
+					}
+	
+					// Synchronous gcode transfer. Waits for the 'ok' ack to be received.
+					if (synchronous) next.wait();
+				}
+			} catch (InterruptedException e1) {
+				//Presumably we're shutting down
+				Thread.currentThread().interrupt();
 				return;
 			}
 	
-			//update the current feedrate
-			String feedrate = getRegexMatch("F(-[0-9\\.]+)", next, 1);
-			if (feedrate!=null) this.feedrate.set(Double.parseDouble(feedrate));
-	
-			//update the current extruder position
-			String e = getRegexMatch("E([-0-9\\.]+)", next, 1);
-			if (e!=null) this.ePosition.set(Double.parseDouble(e));
-	
-			// applychecksum replaces the line that was to be retransmitted, into the next line.
-			if (hasChecksums) next = applyChecksum(next);
-			
-			Base.logger.finest("sending: "+next);
+			// Wait for the response (synchronous gcode transmission)
+			//while(!isFinished()) {}
+		} finally {
+			if (!resending) 
+				sendCommandLock.unlock();
 		}
-		else
-		{
-			Base.logger.finest("resending: "+next);
-		}
-		// Block until we can fit the command on the Arduino
-/*		synchronized(bufferLock)
-		{
-			//wait for the number of commands queued in the buffer to shrink before 
-			//adding the next command to it.
-			while(bufferSize + next.length() + 1 > maxBufferSize)
-			{
-				Base.logger.warning("reprap driver buffer full. gcode write slowed.");
-				try {
-					bufferLock.wait();
-				}
-				catch (InterruptedException e1) {
-					//Presumably we're shutting down
-					Thread.currentThread().interrupt();
-					return;
-				}
-			}
-		}*/
-		
-
-		// debug... let us know whats up!
-		if(debugLevel > 1)
-			Base.logger.info("Sending: " + next);
-
-
-		try {
-			synchronized(next)
-			{
-				// do the actual send.
-				serialInUse.lock();
-				bufferLock.lock();
-				assert (serial != null);
-				
-				if((introduceNoiseEveryN != -1) && (lineIterator++) >= introduceNoiseEveryN) {
-					Base.logger.info("Introducing noise (lineIterator=="
-							+ lineIterator + ",introduceNoiseEveryN=" + introduceNoiseEveryN + ")");
-					lineIterator = 0;
-					String noisyNext = next.replace('6','7').replace('7','1') + "\n";
-					serial.write(noisyNext);
-				} else {
-					serial.write(next + "\n");
-				}
-				serialInUse.unlock();
-
-				// record it in our buffer tracker.
-				int cmdlen = next.length() + 1;
-				commands.add(cmdlen);
-				bufferSize += cmdlen;
-				buffer.addFirst(next);
-				bufferLock.unlock();
-
-				// Synchronous gcode transfer. Waits for the 'ok' ack to be received.
-				if (synchronous) next.wait();
-			}
-		} catch (InterruptedException e1) {
-			//Presumably we're shutting down
-			Thread.currentThread().interrupt();
-			return;
-		}
-
-		// Wait for the response (synchronous gcode transmission)
-		//while(!isFinished()) {}
-		
-		if (!resending) 
-			sendCommandLock.unlock();
 	}
 
 	public String clean(String str) {
@@ -605,150 +615,170 @@ public class RepRap5DDriver extends SerialDriver implements SerialFifoEventListe
 	}
 	
 	public void serialByteReceivedEvent(ByteFifo fifo) {
-		readResponseLock.lock();
-
-		serialInUse.lock();
-		byte[] response = fifo.dequeueLine();
-		int responseLength = response.length;
-		serialInUse.unlock();
-
-		// 0 is now an acceptable value; it merely means that we timed out
-		// waiting for input
-		if (responseLength < 0) {
-			// This signifies EOF. FIXME: How do we handle this?
-			Base.logger.severe("SerialPassthroughDriver.readResponse(): EOF occured");
-			return;
-		} else if(responseLength!=0) {
-			String line;
-			try
-			{
-				//convert to string and remove any trailing \r or \n's
-				line = new String(response, 0, responseLength, "US-ASCII")
-							.trim().toLowerCase();
-			} catch (UnsupportedEncodingException e) {
-				Base.logger.severe("US-ASCII required. Terminating.");
-				throw new RuntimeException(e);
+		try {
+			readResponseLock.lock();
+	
+			byte[] response;
+			int responseLength;
+			try {
+				serialInUse.lock();
+				response = fifo.dequeueLine();
+				responseLength = response.length;
+			} finally {
+				serialInUse.unlock();
 			}
-
-			//System.out.println("received: " + line);
-			//Base.logger.finest("received: " + line);
-			if(debugLevel > 1)
-				Base.logger.info("received: " + line);
-
-			if (line.length() == 0)
-				Base.logger.fine("empty line received");
-			else if (line.startsWith("echo:")) {
-					//if echo is turned on relay it to the user for debugging
-					Base.logger.info(line);
-			}
-			else if (line.startsWith("ok t:")||line.startsWith("t:")) {
-				Pattern r = Pattern.compile("t:([0-9\\.]+)");
-			    Matcher m = r.matcher(line);
-			    if (m.find( )) {
-			    	String temp = m.group(1);
+	
+			// 0 is now an acceptable value; it merely means that we timed out
+			// waiting for input
+			if (responseLength < 0) {
+				// This signifies EOF. FIXME: How do we handle this?
+				Base.logger.severe("SerialPassthroughDriver.readResponse(): EOF occured");
+				return;
+			} else if(responseLength!=0) {
+				String line;
+				try
+				{
+					//convert to string and remove any trailing \r or \n's
+					line = new String(response, 0, responseLength, "US-ASCII")
+								.trim().toLowerCase();
+				} catch (UnsupportedEncodingException e) {
+					Base.logger.severe("US-ASCII required. Terminating.");
+					throw new RuntimeException(e);
+				}
+	
+				System.out.println("received: " + line);
+				//Base.logger.finest("received: " + line);
+				if(debugLevel > 1)
+					Base.logger.info("received: " + line);
+				else Base.logger.finest("received: " + line);
+	
+				if (line.length() == 0)
+					Base.logger.fine("empty line received");
+				else if (line.startsWith("echo:")) {
+						//if echo is turned on relay it to the user for debugging
+						Base.logger.info(line);
+				}
+				else if (line.startsWith("ok t:")||line.startsWith("t:")) {
+					Pattern r = Pattern.compile("t:([0-9\\.]+)");
+				    Matcher m = r.matcher(line);
+				    if (m.find( )) {
+				    	String temp = m.group(1);
+						
+						machine.currentTool().setCurrentTemperature(
+								Double.parseDouble(temp));
+				    }
+					r = Pattern.compile("^ok.*b:([0-9\\.]+)$");
+				    m = r.matcher(line);
+				    if (m.find( )) {
+				    	String bedTemp = m.group(1);
+						machine.currentTool().setPlatformCurrentTemperature(
+								Double.parseDouble(bedTemp));
+				    }
+				    return;
+				}
+				if (line.startsWith("ok")) {
 					
-					machine.currentTool().setCurrentTemperature(
-							Double.parseDouble(temp));
-			    }
-				r = Pattern.compile("^ok.*b:([0-9\\.]+)$");
-			    m = r.matcher(line);
-			    if (m.find( )) {
-			    	String bedTemp = m.group(1);
-					machine.currentTool().setPlatformCurrentTemperature(
-							Double.parseDouble(bedTemp));
-			    }
-			}
-			if (line.startsWith("ok")) {
-				
-				synchronized(okReceived)
-				{
-					okReceived.set(true);
-					okReceived.notifyAll();
-				}
-				bufferSize -= commands.remove();
-
-				bufferLock.lock();
-				//Notify the thread waitining in this gcode's sendCommand method that the gcode has been received.
-				String notifier = buffer.removeLast();
-				synchronized(notifier) { notifier.notifyAll(); }
-				
-				synchronized(bufferLock)
-				{ /*let any sendCommand method waiting to send know that the buffer is 
-					now smaller and may be able to fit their command.*/
-					bufferLock.notifyAll();
-				}
-				bufferLock.unlock();
-			}
-
-			// old arduino firmware sends "start"
-			else if (line.contains("start")) {
-				// todo: set version
-				// TODO: check if this was supposed to happen, otherwise report unexpected reset! 
-				synchronized (startReceived) {
-					startReceived.set(true);
-					startReceived.notifyAll();
-				}
-				lineNumber.set(-1);
-
-			} else if (line.startsWith("extruder fail")) {
-				setError("Extruder failed:  cannot extrude as this rate.");
-
-			} else if (line.startsWith("resend:")||line.startsWith("rs ")) {
-				//Getting the correct line from our buffer
-				bufferLock.lock();
-				String bufferedLine = buffer.removeLast();
-				bufferSize -= commands.remove();
-				bufferLock.unlock();
-
-				//Is it a Dud M or G code? If so write a warning and return.
-				String letter = getRegexMatch("dud ([a-z]) code", line, 1);
-				if ( (letter)!=null)
-				{
-					Base.logger.info("Dud "+letter+" code received. ignoring.");
-					synchronized (bufferedLine) {
-						bufferedLine.notifyAll();
-					}
-					readResponseLock.unlock();
-					return;
-				}
-				
-				// Bad checksum, resend requested
-
-				int bufferedLineNumber = Integer.parseInt( getRegexMatch(
-						gcodeLineNumberPattern, bufferedLine.toLowerCase(), 1) );
-
-				Matcher badLineMatch = resendLinePattern.matcher(line);
-				if (badLineMatch.find())
-				{
-					int badLineNumber = Integer.parseInt(
-							badLineMatch.group(1) );
-					if(debugLevel > 1)
-						Base.logger.severe("Bad line number: " + badLineNumber + ", bufferedLineNumber: "+bufferedLineNumber + ", bufferedLine: \""+bufferedLine+"\"");
-
-					if (bufferedLineNumber != badLineNumber)
+					synchronized(okReceived)
 					{
-						Base.logger.warning("unexpected line number, resetting line number");
-						// reset the line number if it does not match the buffered line
-						 this.resendCommand("N"+(bufferedLineNumber-1)+" M110", null);
+						okReceived.set(true);
+						okReceived.notifyAll();
+					}
+					bufferSize -= commands.remove();
+	
+					try {
+						bufferLock.lock();
+						//Notify the thread waitining in this gcode's sendCommand method that the gcode has been received.
+						String notifier = buffer.removeLast();
+						synchronized(notifier) { notifier.notifyAll(); }
+						
+						synchronized(bufferLock)
+						{ /*let any sendCommand method waiting to send know that the buffer is 
+							now smaller and may be able to fit their command.*/
+							bufferLock.notifyAll();
+						}
+					} finally {
+						bufferLock.unlock();
 					}
 				}
-				else
-				{
-					// Malformed resend line request received. Resetting the line number
-					Base.logger.warning("malformed line resend request, "
-							+"resetting line number. Malformed Data: \n"+line);
-					this.resendCommand("N"+(bufferedLineNumber-1)+" M110", null);
+	
+				// old arduino firmware sends "start"
+				else if (line.contains("start")) {
+					// todo: set version
+					// TODO: check if this was supposed to happen, otherwise report unexpected reset! 
+					synchronized (startReceived) {
+						startReceived.set(true);
+						startReceived.notifyAll();
+					}
+					lineNumber.set(-1);
+	
+				} else if (line.startsWith("extruder fail")) {
+					setError("Extruder failed:  cannot extrude as this rate.");
+	
+				} else if (line.startsWith("resend:")||line.startsWith("rs ")) {
+					//Getting the correct line from our buffer
+					String bufferedLine;
+					try {
+						bufferLock.lock();
+						bufferedLine = buffer.removeLast();
+						bufferSize -= commands.remove();
+					} finally {
+						bufferLock.unlock();
+					}
+	
+					//Is it a Dud M or G code? If so write a warning and return.
+					String letter = getRegexMatch("dud ([a-z]) code", line, 1);
+					if ( (letter)!=null)
+					{
+						Base.logger.info("Dud "+letter+" code received. ignoring.");
+						synchronized (bufferedLine) {
+							bufferedLine.notifyAll();
+						}
+						return;
+					}
+					
+					// Bad checksum, resend requested
+	
+					int bufferedLineNumber = Integer.parseInt( getRegexMatch(
+							gcodeLineNumberPattern, bufferedLine.toLowerCase(), 1) );
+	
+					Matcher badLineMatch = resendLinePattern.matcher(line);
+					if (badLineMatch.find())
+					{
+						int badLineNumber = Integer.parseInt(
+								badLineMatch.group(1) );
+						if(debugLevel > 1)
+							Base.logger.severe("Bad line number: " + badLineNumber + ", bufferedLineNumber: "+bufferedLineNumber + ", bufferedLine: \""+bufferedLine+"\"");
+	
+						if (bufferedLineNumber != badLineNumber)
+						{
+							Base.logger.warning("unexpected line number, resetting line number");
+							// reset the line number if it does not match the buffered line
+							
+							String cmd = "N"+(bufferedLineNumber-1)+" M110";
+							if (hasChecksums) cmd = applyChecksum(cmd);
+							this.resendCommand(cmd, null);
+						}
+					}
+					else
+					{
+						// Malformed resend line request received. Resetting the line number
+						Base.logger.warning("malformed line resend request, "
+								+"resetting line number. Malformed Data: \n"+line);
+						String cmd = "N"+(bufferedLineNumber-1)+" M110";
+						if (hasChecksums) cmd = applyChecksum(cmd);
+						this.resendCommand(cmd, null);
+					}
+	
+					// resend the line
+					this.resendCommand(bufferedLine, bufferedLine);
+	
+				} else {
+					Base.logger.severe("Unknown: " + line);
 				}
-
-				// resend the line
-				this.resendCommand(bufferedLine, bufferedLine);
-
-			} else {
-				Base.logger.severe("Unknown: " + line);
 			}
+		} finally {
+			readResponseLock.unlock();
 		}
-
-		readResponseLock.unlock();
 	}
 
 	public boolean isFinished() {
@@ -770,10 +800,13 @@ public class RepRap5DDriver extends SerialDriver implements SerialFifoEventListe
 	}
 
 	public synchronized void dispose() {
-		bufferLock.lock();
-		super.dispose();
-		commands.clear();
-		bufferLock.unlock();
+		try {
+			bufferLock.lock();
+			super.dispose();
+			commands.clear();
+		} finally {
+			bufferLock.unlock();
+		}
 	}
 
 	/***************************************************************************
