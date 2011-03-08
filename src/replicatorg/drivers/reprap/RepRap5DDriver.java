@@ -680,7 +680,7 @@ public class RepRap5DDriver extends SerialDriver implements SerialFifoEventListe
 					}
 				}
 				if (line.startsWith("ok")) {
-					
+
 					synchronized(okReceived)
 					{
 						okReceived.set(true);
@@ -717,6 +717,10 @@ public class RepRap5DDriver extends SerialDriver implements SerialFifoEventListe
 				} else if (line.startsWith("extruder fail")) {
 					setError("Extruder failed:  cannot extrude as this rate.");
 
+				} else if (line.startsWith("error:")) {
+					//Standard error prefix for Ultimaker and Grbl
+					String error = getRegexMatch("error:(.*)", line, 1).trim();
+					setError(error);
 				} else if (line.startsWith("resend:")||line.startsWith("rs ")) {
 					//Getting the correct line from our buffer
 					String bufferedLine;
