@@ -27,7 +27,7 @@ import org.xml.sax.SAXException;
  *
  */
 public class UpdateChecker {
-	static public final String DEFAULT_UPDATES_URL = "http://download.replicat.org/updates.xml";
+	static public final String DEFAULT_UPDATES_URL = "http://software.ultimaker.com/replicatorg-stable.xml";
 
 	protected static URL getUpdateURL() {
 		try {
@@ -75,7 +75,7 @@ public class UpdateChecker {
 					boolean dontShow = checkbox.isSelected();
 					Base.preferences.putBoolean(key, dontShow);
 					if (result == JOptionPane.YES_OPTION) {
-						Base.openURL("http://replicat.org/download/");
+						Base.openURL("http://software.ultimaker.com/");
 					}
 				}
 			});
