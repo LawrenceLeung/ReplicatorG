@@ -53,7 +53,12 @@ public class ToolModel
 	protected boolean motorHasEncoder;
 	protected int motorEncoderPPR;
 	protected boolean motorIsStepper;
+<<<<<<< HEAD
 	protected int motorSteps;
+=======
+	protected double motorSteps; // motor steps per full rotation
+	protected String motorStepperAxis;    // Stepper axis this motor is connected to
+>>>>>>> d94514a... The length of the extrusion that the RepRap5D ExtrusionUpdater should send depends on the gear ratio of the extruder. E.g. for a Wade-style extruder with hobbed bolt, there are more steps needed for one revolution. The motor_steps parameter of the tool now configures this length, the default has remained the same, but now it's configurable. Example usage i
 
 	//spindle stuff
 	protected boolean spindleEnabled;
@@ -193,10 +198,14 @@ public class ToolModel
 
 			n = XML.getAttributeValue(xml, "motor_steps");
 			try{
+<<<<<<< HEAD
 				if (Integer.parseInt(n) > 0)
+=======
+				if (n != null && Double.parseDouble(n) > 0.0)
+>>>>>>> d94514a... The length of the extrusion that the RepRap5D ExtrusionUpdater should send depends on the gear ratio of the extruder. E.g. for a Wade-style extruder with hobbed bolt, there are more steps needed for one revolution. The motor_steps parameter of the tool now configures this length, the default has remained the same, but now it's configurable. Example usage i
 				{
 					motorIsStepper = true;
-					motorSteps = Integer.parseInt(n);
+					motorSteps = Double.parseDouble(n);
 				}
 			} catch (Exception e) {} // ignore parse errors.
 
@@ -334,6 +343,17 @@ public class ToolModel
 	{
 		return motorSpeedRPM;
 	}
+<<<<<<< HEAD
+=======
+	
+	/**
+	 * Get number of steps per revolution
+	 */
+	public double getMotorSteps()
+	{
+		return motorSteps;
+	}
+>>>>>>> d94514a... The length of the extrusion that the RepRap5D ExtrusionUpdater should send depends on the gear ratio of the extruder. E.g. for a Wade-style extruder with hobbed bolt, there are more steps needed for one revolution. The motor_steps parameter of the tool now configures this length, the default has remained the same, but now it's configurable. Example usage i
 
 	public int getMotorSpeedPWM()
 	{
