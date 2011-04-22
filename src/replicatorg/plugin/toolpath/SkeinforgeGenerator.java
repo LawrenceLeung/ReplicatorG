@@ -256,6 +256,7 @@ public abstract class SkeinforgeGenerator extends ToolpathGenerator {
 		final String profilePref = "replicatorg.skeinforge.profilePref";
 		JButton editButton = new JButton("Edit...");
 		JButton newButton = new JButton("Duplicate...");
+		JButton locateButton = new JButton("Locate...");
 		JButton deleteButton = new JButton("Delete");
 		JButton generate = new JButton("Generate...");
 
@@ -290,6 +291,7 @@ public abstract class SkeinforgeGenerator extends ToolpathGenerator {
 			setLayout(new MigLayout("aligny top"));
 
 			editButton.setToolTipText("Click to edit this profile's properties.");
+			locateButton.setToolTipText("Click to find the folder for this profile, e.g. to make backups or to share your settings.");
 			deleteButton.setToolTipText("Click to remove this profile. Note that this can not be undone.");
 			newButton.setToolTipText("This will make a copy of the currently selected profile, with a new name that you provide.");
 			
@@ -298,6 +300,7 @@ public abstract class SkeinforgeGenerator extends ToolpathGenerator {
 			generate.setEnabled(false);
 					
 			editButton.setEnabled(false);
+			locateButton.setEnabled(false);
 			deleteButton.setEnabled(false);
 			newButton.setEnabled(false);
 
@@ -312,6 +315,7 @@ public abstract class SkeinforgeGenerator extends ToolpathGenerator {
 							.isSelectionEmpty();
 					generate.setEnabled(selected);
 					editButton.setEnabled(selected);
+					locateButton.setEnabled(selected);
 					deleteButton.setEnabled(selected);
 					newButton.setEnabled(selected);
 				}
@@ -369,6 +373,21 @@ public abstract class SkeinforgeGenerator extends ToolpathGenerator {
 				}
 			});
 
+			add(locateButton, "split,flowy,growx");
+			locateButton.addActionListener(new ActionListener() {
+				public void actionPerformed(ActionEvent e) {
+					int idx = prefList.getSelectedIndex();
+					if (idx == -1) {
+					} else {
+						Profile p = (Profile) prefList.getModel().getElementAt(
+								idx);
+						boolean result = new ProfileUtils().openFolder(p);
+						Base.logger.log(Level.FINEST,
+								"Opening directory for profile: "+ result);
+					}
+				}
+			});
+			
 			add(newButton, "growx,flowy");
 			newButton.addActionListener(new ActionListener() {
 				public void actionPerformed(ActionEvent e) {
